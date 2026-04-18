@@ -1,0 +1,53 @@
+{
+  "name": "expo-vision-camera-v4-mediapipe",
+  "version": "1.1.0",
+  "description": "Expo Config Plugin to integrate Google MediaPipe Hand Landmarker with React Native Vision Camera v4. Real-time, on-device hand landmark detection (21 points per hand) via native Kotlin Frame Processor Plugin.",
+  "main": "index.js",
+  "types": "types/index.d.ts",
+  "files": [
+    "index.js",
+    "plugin/",
+    "types/",
+    "hand_landmarker.task",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "keywords": [
+    "expo",
+    "expo-plugin",
+    "config-plugin",
+    "react-native",
+    "vision-camera",
+    "mediapipe",
+    "hand-landmarker",
+    "hand-tracking",
+    "gesture-recognition",
+    "edge-computing",
+    "computer-vision",
+    "ai",
+    "machine-learning",
+    "frame-processor",
+    "android"
+  ],
+  "author": "CarlosEduFF",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CarlosEduFF/expo-vision-camera-v4-mediapipe.git"
+  },
+  "homepage": "https://github.com/CarlosEduFF/expo-vision-camera-v4-mediapipe#readme",
+  "bugs": {
+    "url": "https://github.com/CarlosEduFF/expo-vision-camera-v4-mediapipe/issues"
+  },
+  "peerDependencies": {
+    "expo": ">=50.0.0",
+    "react-native-vision-camera": ">=4.0.0"
+  },
+  "devDependencies": {
+    "expo-module-scripts": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+example/node_modules/
+
+# Build output
+build/
+dist/
+*.tgz
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# MediaPipe model binary (users should download separately)
+# Uncomment below if using Git LFS or separate download:
+# hand_landmarker.task
+
+# Expo
+.expo/
