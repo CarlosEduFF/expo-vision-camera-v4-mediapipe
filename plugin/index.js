@@ -54,14 +54,9 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
 
   return `package ${packageName}
 
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.ImageFormat
-import android.graphics.Rect
-import android.graphics.YuvImage
 import android.media.Image
 import android.util.Log
-import com.google.mediapipe.framework.image.BitmapImageBuilder
+import com.google.mediapipe.framework.image.MediaImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
@@ -69,7 +64,6 @@ import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 import com.mrousavy.camera.frameprocessors.Frame
 import com.mrousavy.camera.frameprocessors.FrameProcessorPlugin
 import com.mrousavy.camera.frameprocessors.VisionCameraProxy
-import java.io.ByteArrayOutputStream
 
 /**
  * HandLandmarkerPlugin: High-performance Hand Landmark detection for Vision Camera v4.
@@ -131,21 +125,11 @@ class HandLandmarkerPlugin(
             )
         }
 
+        var mpImage: MPImage? = null
         try {
             val mediaImage: Image = frame.image
-            val bitmap = imageToBitmap(mediaImage)
-
-            if (bitmap == null) {
-                Log.e(TAG, "Image to Bitmap conversion failed (format=\${mediaImage.format})")
-                return hashMapOf<String, Any>(
-                    "hands" to emptyList<Any>(),
-                    "error" to "Image to Bitmap conversion failed"
-                )
-            }
-
-            val mpImage: MPImage = BitmapImageBuilder(bitmap).build()
+            mpImage = MediaImageBuilder(mediaImage).build()
             val result = handLandmarker!!.detect(mpImage)
-            bitmap.recycle()
 
             val numHands = result.landmarks().size
             if (numHands == 0) {
@@ -190,79 +174,9 @@ class HandLandmarkerPlugin(
                 "hands" to emptyList<Any>(),
                 "error" to (e.message ?: "Unknown error")
             )
+        } finally {
+            mpImage?.close()
         }
-    }
-
-    private fun imageToBitmap(image: Image): Bitmap? {
-        return when (image.format) {
-            ImageFormat.YUV_420_888 -> yuvToBitmap(image)
-            ImageFormat.JPEG -> jpegToBitmap(image)
-            else -> yuvToBitmap(image)
-        }
-    }
-
-    private fun yuvToBitmap(image: Image): Bitmap? {
-        try {
-            val width = image.width
-            val height = image.height
-            val yPlane = image.planes[0]
-            val uPlane = image.planes[1]
-            val vPlane = image.planes[2]
-            val yBuffer = yPlane.buffer
-            val uBuffer = uPlane.buffer
-            val vBuffer = vPlane.buffer
-
-            yBuffer.rewind()
-            uBuffer.rewind()
-            vBuffer.rewind()
-
-            val yRowStride = yPlane.rowStride
-            val uvRowStride = uPlane.rowStride
-            val uvPixelStride = uPlane.pixelStride
-
-            val nv21 = ByteArray(width * height * 3 / 2)
-
-            if (yRowStride == width) {
-                yBuffer.get(nv21, 0, width * height)
-            } else {
-                for (row in 0 until height) {
-                    yBuffer.position(row * yRowStride)
-                    yBuffer.get(nv21, row * width, width)
-                }
-            }
-
-            val uvHeight = height / 2
-            val uvWidth = width / 2
-            var nv21Offset = width * height
-
-            for (row in 0 until uvHeight) {
-                for (col in 0 until uvWidth) {
-                    val uvIndex = row * uvRowStride + col * uvPixelStride
-                    vBuffer.position(uvIndex)
-                    nv21[nv21Offset++] = vBuffer.get()
-                    uBuffer.position(uvIndex)
-                    nv21[nv21Offset++] = uBuffer.get()
-                }
-            }
-
-            val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
-            val outStream = ByteArrayOutputStream()
-            yuvImage.compressToJpeg(Rect(0, 0, width, height), 85, outStream)
-            val jpegBytes = outStream.toByteArray()
-
-            return BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size,
-                BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888 })
-        } catch (e: Exception) {
-            Log.e(TAG, "Error converting YUV to Bitmap", e)
-            return null
-        }
-    }
-
-    private fun jpegToBitmap(image: Image): Bitmap? {
-        val buffer = image.planes[0].buffer
-        val bytes = ByteArray(buffer.remaining())
-        buffer.get(bytes)
-        return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
     }
 }
 `;

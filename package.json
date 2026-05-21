@@ -1,6 +1,6 @@
 {
   "name": "expo-vision-camera-v4-mediapipe",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Expo Config Plugin to integrate Google MediaPipe Hand Landmarker with React Native Vision Camera v4. Real-time, on-device hand landmark detection (21 points per hand) via native Kotlin Frame Processor Plugin.",
   "main": "index.js",
   "types": "types/index.d.ts",
