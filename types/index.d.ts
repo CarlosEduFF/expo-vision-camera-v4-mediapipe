@@ -42,7 +42,38 @@ export interface HandednessCategory {
 }
 
 /**
+ * A single body pose landmark (MediaPipe Pose, 33 points).
+ * Coordinates normalized to [0.0, 1.0]; `visibility` ∈ [0.0, 1.0].
+ *
+ * @see https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker
+ */
+export interface PoseLandmark {
+  x: number;
+  y: number;
+  z: number;
+  /** Probability of the landmark being visible in the frame [0.0, 1.0] */
+  visibility: number;
+}
+
+/**
+ * A single face landmark (MediaPipe FaceLandmarker, 478 points).
+ * Coordinates normalized to [0.0, 1.0].
+ *
+ * @see https://ai.google.dev/edge/mediapipe/solutions/vision/face_landmarker
+ */
+export interface FaceLandmark {
+  x: number;
+  y: number;
+  z: number;
+}
+
+/**
  * Result returned from `detectHandLandmarks()` frame processor call.
+ *
+ * `pose` and `face` are present only when the plugin is configured with
+ * `enablePose` / `enableFace` and the respective landmarks were detected.
+ * For Libras (Brazilian Sign Language), face (non-manual markers) and body
+ * pose carry meaning beyond the hands.
  */
 export interface HandDetectionResult {
   /**
@@ -72,11 +103,30 @@ export interface HandDetectionResult {
   handedness?: HandednessCategory[][];
 
   /**
+   * Body pose landmarks (33 points) for the primary detected person.
+   * Present only when `enablePose` is set and a pose was detected.
+   */
+  pose?: PoseLandmark[];
+
+  /**
+   * Face landmarks (up to 478 points) for the primary detected face.
+   * Present only when `enableFace` is set and a face was detected.
+   */
+  face?: FaceLandmark[];
+
+  /**
    * Error message if detection failed.
    * Present only when an error occurred during initialization or inference.
    */
   error?: string;
 }
+
+/**
+ * Alias semântico para o resultado holístico (mãos + corpo + rosto).
+ * É o mesmo shape de {@link HandDetectionResult}, com `pose`/`face` populados
+ * quando `enablePose`/`enableFace` estão ativos.
+ */
+export type HolisticDetectionResult = HandDetectionResult;
 
 /**
  * MediaPipe Hand Landmarker — Frame Processor Plugin
@@ -144,4 +194,24 @@ export declare enum HandLandmarkIndex {
   PINKY_PIP = 18,
   PINKY_DIP = 19,
   PINKY_TIP = 20,
+}
+
+/**
+ * MediaPipe Pose landmark indices (subset relevant for Libras: upper body).
+ * Mirrors the POSE_INDICES used by the Li-Vision API feature builder.
+ */
+export declare enum PoseLandmarkIndex {
+  NOSE = 0,
+  LEFT_EYE = 2,
+  RIGHT_EYE = 5,
+  LEFT_EAR = 7,
+  RIGHT_EAR = 8,
+  LEFT_SHOULDER = 11,
+  RIGHT_SHOULDER = 12,
+  LEFT_ELBOW = 13,
+  RIGHT_ELBOW = 14,
+  LEFT_WRIST = 15,
+  RIGHT_WRIST = 16,
+  LEFT_HIP = 23,
+  RIGHT_HIP = 24,
 }

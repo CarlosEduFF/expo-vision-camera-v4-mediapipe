@@ -32,6 +32,9 @@ Detect **21 hand landmark points** per hand in real-time, directly on-device (**
 | 🖐️ **Multi-Hand** | Detect up to 4 hands simultaneously |
 | 🤲 **Handedness** | Classify each hand as Left or Right with confidence score |
 | 📐 **21 Landmarks** | Full 3D hand skeleton (x, y, z) per hand |
+| 🧍 **Body Pose** *(opt-in)* | 33 body landmarks via `PoseLandmarker` — enable with `enablePose` |
+| 😀 **Face** *(opt-in)* | Up to 478 face landmarks via `FaceLandmarker` — enable with `enableFace` |
+| 🤟 **Holistic** | Hands + body + face together — built for full sign-language (Libras) meaning |
 | 📦 **Expo Managed** | Works in managed workflow — no need to eject |
 | 🔧 **Auto-Config** | Automatically configures `build.gradle`, `MainApplication.kt`, and native assets |
 | ⚙️ **Configurable** | Tune detection/tracking confidence and max hands via `app.json` |
@@ -63,6 +66,21 @@ The plugin will automatically find it in:
 1. `./assets/hand_landmarker.task`
 2. `./hand_landmarker.task`
 3. `./node_modules/expo-vision-camera-v4-mediapipe/hand_landmarker.task`
+
+#### Optional: Pose & Face models (holistic)
+
+If you enable `enablePose` and/or `enableFace`, also download the corresponding
+models from [Google MediaPipe](https://ai.google.dev/edge/mediapipe/solutions/vision)
+and place them next to `hand_landmarker.task` (project root or `assets/`):
+
+| Channel | Model file | Option |
+|---|---|---|
+| Body | `pose_landmarker_lite.task` | `enablePose` |
+| Face | `face_landmarker.task` | `enableFace` |
+
+> These models are **not** bundled with the npm package to keep it lightweight.
+> The plugin copies them into Android assets at prebuild time if present, and
+> logs a warning telling you where to put them if they are missing.
 
 ## ⚙️ Configuration
 
@@ -105,6 +123,31 @@ Add the plugin to your `app.json` or `app.config.js`:
 | `minDetectionConfidence` | `number` | `0.4` | Minimum confidence for initial hand detection (0.0-1.0) |
 | `minPresenceConfidence` | `number` | `0.4` | Minimum confidence for hand presence (0.0-1.0) |
 | `minTrackingConfidence` | `number` | `0.4` | Minimum confidence for landmark tracking (0.0-1.0) |
+| `enablePose` | `boolean` | `false` | Also detect body pose (33 landmarks via `PoseLandmarker`) |
+| `enableFace` | `boolean` | `false` | Also detect face landmarks (up to 478 via `FaceLandmarker`) |
+
+### Holistic (hands + body + face)
+
+For full sign-language meaning, enable the extra channels:
+
+```json
+{
+  "expo": {
+    "plugins": [
+      "react-native-vision-camera",
+      ["expo-vision-camera-v4-mediapipe", {
+        "numHands": 2,
+        "enablePose": true,
+        "enableFace": true
+      }]
+    ]
+  }
+}
+```
+
+> Remember to also download `pose_landmarker_lite.task` and `face_landmarker.task`
+> (see [Model File](#model-file) above). With both flags at their default `false`,
+> behavior is identical to previous versions — hands only.
 
 After configuration, run:
 
@@ -178,11 +221,37 @@ interface HandDetectionResult {
   
   /** Handedness classification per hand ("Left" / "Right") */
   handedness?: HandednessCategory[][];
-  
+
+  /** Body pose (33 points) — present only when `enablePose` is set */
+  pose?: PoseLandmark[];
+
+  /** Face landmarks (up to 478 points) — present only when `enableFace` is set */
+  face?: FaceLandmark[];
+
   /** Error message if detection failed */
   error?: string;
 }
 ```
+
+#### `PoseLandmark` / `FaceLandmark`
+
+```typescript
+interface PoseLandmark {
+  x: number;          // Normalized [0.0, 1.0]
+  y: number;          // Normalized [0.0, 1.0]
+  z: number;          // Depth
+  visibility: number; // Probability the point is visible [0.0, 1.0]
+}
+
+interface FaceLandmark {
+  x: number;  // Normalized [0.0, 1.0]
+  y: number;  // Normalized [0.0, 1.0]
+  z: number;  // Depth
+}
+```
+
+> `pose` and `face` are **additive** — code that only reads `hands`/`handedness`
+> keeps working unchanged whether or not these channels are enabled.
 
 #### `HandLandmark`
 

@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-06-07
+
+### Added
+- **Holistic detection** — optional body pose (`PoseLandmarker`) and face (`FaceLandmarker`) landmarks alongside hands, essential for full sign-language (Libras) meaning where non-manual markers (face) and body posture carry semantics beyond the hands.
+- New `app.json` options `enablePose` and `enableFace` (both default `false`).
+- Result now optionally includes `pose` (33 points with `visibility`) and `face` (up to 478 points) fields.
+- TypeScript types `PoseLandmark`, `FaceLandmark`, `HolisticDetectionResult`, and `PoseLandmarkIndex` enum.
+
+### Changed
+- The generated Kotlin only creates the Pose/Face landmarkers when the respective flags are enabled — no extra model dependency for hands-only users.
+
+### Backward compatibility
+- **Fully backward compatible.** With `enablePose`/`enableFace` left at their default (`false`), the generated native code and the result shape (`hands`, `handedness`) are identical to `1.1.1`. Existing apps require no changes.
+- The pose/face models (`pose_landmarker_lite.task`, `face_landmarker.task`) are **not bundled** in the package; download them and place in your project root or `assets/` only if you enable those channels.
+
 ## [1.1.1] - 2026-05-21
 
 ### Fixed

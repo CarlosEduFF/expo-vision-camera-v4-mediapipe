@@ -13,12 +13,20 @@
  *   "numHands": 2,
  *   "minDetectionConfidence": 0.4,
  *   "minPresenceConfidence": 0.4,
- *   "minTrackingConfidence": 0.4
+ *   "minTrackingConfidence": 0.4,
+ *   "enablePose": true,
+ *   "enableFace": true
  * }]
  * ```
  *
+ * Com enablePose/enableFace, o plugin também detecta corpo (PoseLandmarker) e
+ * rosto (FaceLandmarker), retornando 'pose' e 'face' além de 'hands' — canais
+ * necessários para o significado completo dos sinais de Libras. Esses modelos
+ * (pose_landmarker_lite.task, face_landmarker.task) precisam estar disponíveis
+ * para cópia ao prebuild.
+ *
  * @platform Android
- * @see https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker
+ * @see https://ai.google.dev/edge/mediapipe/solutions/vision
  */
 
 const {
@@ -38,7 +46,16 @@ const DEFAULT_OPTIONS = {
   minDetectionConfidence: 0.4,
   minPresenceConfidence: 0.4,
   minTrackingConfidence: 0.4,
+  // Canais holísticos (Libras completa). Desligados por padrão para manter
+  // o comportamento só-mãos retrocompatível.
+  enablePose: false,
+  enableFace: false,
 };
+
+// Modelos MediaPipe necessários por canal habilitado.
+const MODEL_HAND = "hand_landmarker.task";
+const MODEL_POSE = "pose_landmarker_lite.task";
+const MODEL_FACE = "face_landmarker.task";
 
 // -----------------------------------------------
 // Kotlin Plugin Source Template
@@ -50,7 +67,97 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
     minDetectionConfidence,
     minPresenceConfidence,
     minTrackingConfidence,
+    enablePose,
+    enableFace,
   } = { ...DEFAULT_OPTIONS, ...options };
+
+  // Blocos opcionais (pose/face) só são emitidos quando habilitados, para não
+  // arrastar dependências de modelo que o app não vai empacotar.
+  const poseImports = enablePose
+    ? `import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker\n`
+    : "";
+  const faceImports = enableFace
+    ? `import com.google.mediapipe.tasks.vision.facelandmarker.FaceLandmarker\n`
+    : "";
+
+  const poseField = enablePose ? `    private var poseLandmarker: PoseLandmarker? = null\n` : "";
+  const faceField = enableFace ? `    private var faceLandmarker: FaceLandmarker? = null\n` : "";
+
+  const poseInit = enablePose
+    ? `
+            val poseBase = BaseOptions.builder()
+                .setModelAssetPath("${MODEL_POSE}")
+                .build()
+            val poseOptions = PoseLandmarker.PoseLandmarkerOptions.builder()
+                .setBaseOptions(poseBase)
+                .setRunningMode(RunningMode.IMAGE)
+                .setNumPoses(1)
+                .setMinPoseDetectionConfidence(${minDetectionConfidence}f)
+                .setMinPosePresenceConfidence(${minPresenceConfidence}f)
+                .setMinTrackingConfidence(${minTrackingConfidence}f)
+                .build()
+            poseLandmarker = PoseLandmarker.createFromOptions(context, poseOptions)
+            Log.d(TAG, "=== PoseLandmarker CREATED ===")
+`
+    : "";
+
+  const faceInit = enableFace
+    ? `
+            val faceBase = BaseOptions.builder()
+                .setModelAssetPath("${MODEL_FACE}")
+                .build()
+            val faceOptions = FaceLandmarker.FaceLandmarkerOptions.builder()
+                .setBaseOptions(faceBase)
+                .setRunningMode(RunningMode.IMAGE)
+                .setNumFaces(1)
+                .setMinFaceDetectionConfidence(${minDetectionConfidence}f)
+                .setMinFacePresenceConfidence(${minPresenceConfidence}f)
+                .setMinTrackingConfidence(${minTrackingConfidence}f)
+                .build()
+            faceLandmarker = FaceLandmarker.createFromOptions(context, faceOptions)
+            Log.d(TAG, "=== FaceLandmarker CREATED ===")
+`
+    : "";
+
+  // No callback, anexa pose/face ao mapa de saída (mesma MPImage, reaproveitada).
+  const poseDetect = enablePose
+    ? `
+            poseLandmarker?.let { pl ->
+                val poseResult = pl.detect(mpImage)
+                if (poseResult.landmarks().isNotEmpty()) {
+                    val posePoints = mutableListOf<Map<String, Double>>()
+                    for (lm in poseResult.landmarks()[0]) {
+                        posePoints.add(hashMapOf(
+                            "x" to lm.x().toDouble(),
+                            "y" to lm.y().toDouble(),
+                            "z" to lm.z().toDouble(),
+                            "visibility" to (lm.visibility().orElse(0f)).toDouble()
+                        ))
+                    }
+                    output["pose"] = posePoints
+                }
+            }
+`
+    : "";
+
+  const faceDetect = enableFace
+    ? `
+            faceLandmarker?.let { fl ->
+                val faceResult = fl.detect(mpImage)
+                if (faceResult.faceLandmarks().isNotEmpty()) {
+                    val facePoints = mutableListOf<Map<String, Double>>()
+                    for (lm in faceResult.faceLandmarks()[0]) {
+                        facePoints.add(hashMapOf(
+                            "x" to lm.x().toDouble(),
+                            "y" to lm.y().toDouble(),
+                            "z" to lm.z().toDouble()
+                        ))
+                    }
+                    output["face"] = facePoints
+                }
+            }
+`
+    : "";
 
   return `package ${packageName}
 
@@ -61,22 +168,25 @@ import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
-import com.mrousavy.camera.frameprocessors.Frame
+${poseImports}${faceImports}import com.mrousavy.camera.frameprocessors.Frame
 import com.mrousavy.camera.frameprocessors.FrameProcessorPlugin
 import com.mrousavy.camera.frameprocessors.VisionCameraProxy
 
 /**
- * HandLandmarkerPlugin: High-performance Hand Landmark detection for Vision Camera v4.
- * Processes frames on-device using MediaPipe's Task Vision API.
+ * HandLandmarkerPlugin: detecção holística para Vision Camera v4.
+ * Processa frames on-device com a Task Vision API do MediaPipe.
  *
- * Returns 21 landmark points per hand with x, y, z coordinates,
- * plus handedness classification (Left/Right).
+ * Sempre retorna 21 landmarks por mão (x, y, z) + handedness (Left/Right).
+ * Opcionalmente retorna 'pose' (corpo) e 'face' (rosto) quando habilitados,
+ * essenciais para o significado completo dos sinais de Libras.
  *
- * Configuration:
+ * Configuração:
  *   numHands = ${numHands}
  *   minDetectionConfidence = ${minDetectionConfidence}f
  *   minPresenceConfidence = ${minPresenceConfidence}f
  *   minTrackingConfidence = ${minTrackingConfidence}f
+ *   enablePose = ${enablePose}
+ *   enableFace = ${enableFace}
  */
 class HandLandmarkerPlugin(
     proxy: VisionCameraProxy,
@@ -88,7 +198,7 @@ class HandLandmarkerPlugin(
     }
 
     private var handLandmarker: HandLandmarker? = null
-    private var initError: String? = null
+${poseField}${faceField}    private var initError: String? = null
 
     init {
         try {
@@ -96,7 +206,7 @@ class HandLandmarkerPlugin(
             val context = proxy.context
 
             val baseOptions = BaseOptions.builder()
-                .setModelAssetPath("hand_landmarker.task")
+                .setModelAssetPath("${MODEL_HAND}")
                 .build()
 
             val landmarkerOptions = HandLandmarker.HandLandmarkerOptions.builder()
@@ -110,9 +220,9 @@ class HandLandmarkerPlugin(
 
             handLandmarker = HandLandmarker.createFromOptions(context, landmarkerOptions)
             Log.d(TAG, "=== HandLandmarker CREATED SUCCESSFULLY ===")
-        } catch (e: Exception) {
+${poseInit}${faceInit}        } catch (e: Exception) {
             initError = e.message
-            Log.e(TAG, "=== ERROR INITIALIZING HandLandmarker ===", e)
+            Log.e(TAG, "=== ERROR INITIALIZING landmarkers ===", e)
         }
     }
 
@@ -131,12 +241,9 @@ class HandLandmarkerPlugin(
             mpImage = MediaImageBuilder(mediaImage).build()
             val result = handLandmarker!!.detect(mpImage)
 
-            val numHands = result.landmarks().size
-            if (numHands == 0) {
-                return hashMapOf<String, Any>("hands" to emptyList<Any>())
-            }
+            val output = hashMapOf<String, Any>()
 
-            // Extract landmark points
+            // Extract hand landmark points
             val handsArray = mutableListOf<List<Map<String, Double>>>()
             for (hand in result.landmarks()) {
                 val points = mutableListOf<Map<String, Double>>()
@@ -149,6 +256,7 @@ class HandLandmarkerPlugin(
                 }
                 handsArray.add(points)
             }
+            output["hands"] = handsArray
 
             // Extract handedness (Left/Right classification)
             val handednessArray = mutableListOf<List<Map<String, Any>>>()
@@ -163,11 +271,9 @@ class HandLandmarkerPlugin(
                 }
                 handednessArray.add(categoryList)
             }
-
-            return hashMapOf<String, Any>(
-                "hands" to handsArray,
-                "handedness" to handednessArray
-            )
+            output["handedness"] = handednessArray
+${poseDetect}${faceDetect}
+            return output
         } catch (e: Exception) {
             Log.e(TAG, "ERROR in detection callback", e)
             return hashMapOf<String, Any>(
@@ -200,6 +306,12 @@ function resolveOptions(userOptions = {}) {
 
   for (const key of ["minDetectionConfidence", "minPresenceConfidence", "minTrackingConfidence"]) {
     if (typeof userOptions[key] === "number" && userOptions[key] >= 0.0 && userOptions[key] <= 1.0) {
+      opts[key] = userOptions[key];
+    }
+  }
+
+  for (const key of ["enablePose", "enableFace"]) {
+    if (typeof userOptions[key] === "boolean") {
       opts[key] = userOptions[key];
     }
   }
@@ -251,6 +363,8 @@ function writeFileIfChanged(filePath, content) {
  * @param {number} [options.minDetectionConfidence=0.4] - Min confidence for hand detection (0.0-1.0)
  * @param {number} [options.minPresenceConfidence=0.4] - Min confidence for hand presence (0.0-1.0)
  * @param {number} [options.minTrackingConfidence=0.4] - Min confidence for hand tracking (0.0-1.0)
+ * @param {boolean} [options.enablePose=false] - Also detect body pose (PoseLandmarker)
+ * @param {boolean} [options.enableFace=false] - Also detect face landmarks (FaceLandmarker)
  * @returns {object} Modified Expo config
  */
 function withHandLandmarker(config, options = {}) {
@@ -265,7 +379,7 @@ function withHandLandmarker(config, options = {}) {
     if (!gradle.includes("com.google.mediapipe:tasks-vision")) {
       mod.modResults.contents = gradle.replace(
         /dependencies\s*\{/,
-        `dependencies {\n    // MediaPipe Tasks Vision — HandLandmarker (expo-vision-camera-v4-mediapipe)\n    implementation("com.google.mediapipe:tasks-vision:0.10.21")\n`
+        `dependencies {\n    // MediaPipe Tasks Vision — Hand/Pose/Face Landmarker (expo-vision-camera-v4-mediapipe)\n    implementation("com.google.mediapipe:tasks-vision:0.10.21")\n`
       );
       console.log("[HandLandmarker] ✅ Added MediaPipe dependency to build.gradle");
     } else {
@@ -329,34 +443,41 @@ function withHandLandmarker(config, options = {}) {
         console.log("[HandLandmarker] ⏭️  HandLandmarkerPlugin.kt unchanged, skipping");
       }
 
-      // Attempt to copy model from root, assets, or plugin package
-      const modelName = "hand_landmarker.task";
-      const possibleSources = [
-        path.join(projectRoot, "assets", modelName),
-        path.join(projectRoot, modelName),
-        path.join(projectRoot, "node_modules", "expo-vision-camera-v4-mediapipe", modelName),
-      ];
+      // Copia cada modelo necessário (mãos sempre; pose/face se habilitados)
+      // procurando em assets/, raiz do projeto e no pacote do plugin.
+      const requiredModels = [MODEL_HAND];
+      if (resolvedOptions.enablePose) requiredModels.push(MODEL_POSE);
+      if (resolvedOptions.enableFace) requiredModels.push(MODEL_FACE);
 
-      const dest = path.join(assetsDir, modelName);
-      if (!fs.existsSync(dest)) {
+      for (const modelName of requiredModels) {
+        const possibleSources = [
+          path.join(projectRoot, "assets", modelName),
+          path.join(projectRoot, modelName),
+          path.join(projectRoot, "node_modules", "expo-vision-camera-v4-mediapipe", modelName),
+        ];
+
+        const dest = path.join(assetsDir, modelName);
+        if (fs.existsSync(dest)) {
+          console.log(`[HandLandmarker] ⏭️  "${modelName}" já está em assets, pulando`);
+          continue;
+        }
+
         let found = false;
         for (const src of possibleSources) {
           if (fs.existsSync(src)) {
             fs.copyFileSync(src, dest);
-            console.log(`[HandLandmarker] ✅ Copied model from ${src}`);
+            console.log(`[HandLandmarker] ✅ Copiado "${modelName}" de ${src}`);
             found = true;
             break;
           }
         }
         if (!found) {
           console.warn(
-            `[HandLandmarker] ⚠️  Model file "${modelName}" not found in any of:\n` +
+            `[HandLandmarker] ⚠️  Modelo "${modelName}" não encontrado em:\n` +
             possibleSources.map((s) => `  - ${s}`).join("\n") + "\n" +
-            "  Please download it from https://ai.google.dev/edge/mediapipe/solutions/vision/hand_landmarker#models"
+            "  Baixe os modelos em https://ai.google.dev/edge/mediapipe/solutions/vision"
           );
         }
-      } else {
-        console.log("[HandLandmarker] ⏭️  Model already in assets, skipping copy");
       }
 
       return mod;

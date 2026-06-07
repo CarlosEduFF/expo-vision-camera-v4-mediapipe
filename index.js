@@ -64,4 +64,26 @@ const HandLandmarkIndex = Object.freeze({
   PINKY_TIP: 20,
 });
 
-module.exports = { HandLandmarkIndex };
+/**
+ * MediaPipe Pose landmark indices (subset relevant for Libras: upper body).
+ * Mirrors POSE_INDICES used by the Li-Vision API feature builder.
+ * @readonly
+ * @enum {number}
+ */
+const PoseLandmarkIndex = Object.freeze({
+  NOSE: 0,
+  LEFT_EYE: 2,
+  RIGHT_EYE: 5,
+  LEFT_EAR: 7,
+  RIGHT_EAR: 8,
+  LEFT_SHOULDER: 11,
+  RIGHT_SHOULDER: 12,
+  LEFT_ELBOW: 13,
+  RIGHT_ELBOW: 14,
+  LEFT_WRIST: 15,
+  RIGHT_WRIST: 16,
+  LEFT_HIP: 23,
+  RIGHT_HIP: 24,
+});
+
+module.exports = { HandLandmarkIndex, PoseLandmarkIndex };
