@@ -1,6 +1,6 @@
 {
   "name": "expo-vision-camera-v4-mediapipe",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Expo Config Plugin to integrate Google MediaPipe Hand, Pose & Face Landmarker with React Native Vision Camera v4. Real-time, on-device holistic landmark detection (hands, body and face) via native Kotlin Frame Processor Plugin.",
   "main": "index.js",
   "types": "types/index.d.ts",

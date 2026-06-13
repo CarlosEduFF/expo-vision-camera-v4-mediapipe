@@ -123,7 +123,7 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
   const poseDetect = enablePose
     ? `
             poseLandmarker?.let { pl ->
-                val poseResult = pl.detect(mpImage)
+                val poseResult = pl.detect(mpImage, imageProcessingOptions)
                 if (poseResult.landmarks().isNotEmpty()) {
                     val posePoints = mutableListOf<Map<String, Double>>()
                     for (lm in poseResult.landmarks()[0]) {
@@ -143,7 +143,7 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
   const faceDetect = enableFace
     ? `
             faceLandmarker?.let { fl ->
-                val faceResult = fl.detect(mpImage)
+                val faceResult = fl.detect(mpImage, imageProcessingOptions)
                 if (faceResult.faceLandmarks().isNotEmpty()) {
                     val facePoints = mutableListOf<Map<String, Double>>()
                     for (lm in faceResult.faceLandmarks()[0]) {
@@ -166,6 +166,7 @@ import android.util.Log
 import com.google.mediapipe.framework.image.MediaImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.core.BaseOptions
+import com.google.mediapipe.tasks.vision.core.ImageProcessingOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 ${poseImports}${faceImports}import com.mrousavy.camera.frameprocessors.Frame
@@ -239,7 +240,17 @@ ${poseInit}${faceInit}        } catch (e: Exception) {
         try {
             val mediaImage: Image = frame.image
             mpImage = MediaImageBuilder(mediaImage).build()
-            val result = handLandmarker!!.detect(mpImage)
+
+            // A câmera Android entrega o buffer na orientação do sensor (geralmente
+            // deitado). Sem informar a rotação ao MediaPipe, a imagem chega "de lado"
+            // e a mão não é detectada. rotationDegrees é o giro necessário para deixar
+            // a imagem em pé — repassamos via ImageProcessingOptions.
+            val rotationDegrees = frame.imageProxy.imageInfo.rotationDegrees
+            val imageProcessingOptions = ImageProcessingOptions.builder()
+                .setRotationDegrees(rotationDegrees)
+                .build()
+
+            val result = handLandmarker!!.detect(mpImage, imageProcessingOptions)
 
             val output = hashMapOf<String, Any>()
 

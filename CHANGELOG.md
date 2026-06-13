@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-06-13
+
+### Fixed
+- **Detecção de mão falhando em modo retrato** — o frame da câmera era entregue ao MediaPipe na orientação do sensor (deitado), sem informar a rotação. A imagem chegava "de lado" e a mão raramente era detectada. Agora o plugin lê `frame.imageProxy.imageInfo.rotationDegrees` e o repassa via `ImageProcessingOptions.setRotationDegrees(...)` em todas as detecções (hands, pose e face). Os landmarks passam a ser retornados já na orientação correta (em pé).
+
+### Observação para consumidores
+- Apps que faziam compensação manual de rotação nas coordenadas (ex.: trocar/inverter eixos X⇄Y no JS) devem remover esse workaround — agora basta o espelhamento horizontal (`x → 1 - x`) para câmera frontal.
+
 ## [1.2.0] - 2026-06-07
 
 ### Added
