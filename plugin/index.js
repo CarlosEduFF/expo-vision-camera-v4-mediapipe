@@ -169,7 +169,8 @@ import com.google.mediapipe.tasks.core.BaseOptions
 import com.google.mediapipe.tasks.vision.core.ImageProcessingOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
-${poseImports}${faceImports}import com.mrousavy.camera.frameprocessors.Frame
+${poseImports}${faceImports}import com.mrousavy.camera.core.types.Orientation
+import com.mrousavy.camera.frameprocessors.Frame
 import com.mrousavy.camera.frameprocessors.FrameProcessorPlugin
 import com.mrousavy.camera.frameprocessors.VisionCameraProxy
 
@@ -243,9 +244,18 @@ ${poseInit}${faceInit}        } catch (e: Exception) {
 
             // A câmera Android entrega o buffer na orientação do sensor (geralmente
             // deitado). Sem informar a rotação ao MediaPipe, a imagem chega "de lado"
-            // e a mão não é detectada. rotationDegrees é o giro necessário para deixar
-            // a imagem em pé — repassamos via ImageProcessingOptions.
-            val rotationDegrees = frame.imageProxy.imageInfo.rotationDegrees
+            // e a mão não é detectada. Usamos frame.orientation (API pública do
+            // frame processor) e o convertemos no giro necessário para deixar a
+            // imagem em pé, repassado via ImageProcessingOptions.
+            // Obs.: getOrientation() = fromRotationDegrees(rotDeg).reversed(), e
+            // reversed() só troca LEFT<->RIGHT. Invertendo de volta para recuperar
+            // o rotationDegrees do CameraX: LANDSCAPE_LEFT->270 e LANDSCAPE_RIGHT->90.
+            val rotationDegrees = when (frame.orientation) {
+                Orientation.PORTRAIT -> 0
+                Orientation.LANDSCAPE_RIGHT -> 90
+                Orientation.PORTRAIT_UPSIDE_DOWN -> 180
+                Orientation.LANDSCAPE_LEFT -> 270
+            }
             val imageProcessingOptions = ImageProcessingOptions.builder()
                 .setRotationDegrees(rotationDegrees)
                 .build()

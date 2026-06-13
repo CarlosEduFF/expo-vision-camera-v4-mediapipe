@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-06-13
+
+### Fixed
+- **Erro de compilação no Kotlin gerado (1.2.1)** — a leitura da rotação via `frame.imageProxy.imageInfo.rotationDegrees` exigia o tipo `androidx.camera.core.ImageProxy`, que não está no classpath do módulo do app (`Cannot access class 'ImageProxy'` / `Unresolved reference 'imageInfo'`). Agora a rotação é obtida via `frame.orientation` (API pública do frame processor) e convertida para `rotationDegrees`, sem depender de tipos transitivos do CameraX.
+
 ## [1.2.1] - 2026-06-13
 
 ### Fixed
