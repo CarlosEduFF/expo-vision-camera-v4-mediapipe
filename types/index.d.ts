@@ -137,6 +137,10 @@ export type HolisticDetectionResult = HandDetectionResult;
  *
  * Must be called inside a `useFrameProcessor` worklet context.
  *
+ * ⚠️ The `<Camera>` must be configured with `pixelFormat="rgb"`. The plugin wraps
+ * the frame via `MediaImageBuilder`, which requires RGBA_8888. With the default
+ * YUV format, detection fails with "Android media image must use RGBA_8888 config".
+ *
  * @example
  * ```tsx
  * import { useFrameProcessor } from 'react-native-vision-camera';

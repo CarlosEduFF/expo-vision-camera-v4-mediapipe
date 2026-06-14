@@ -200,11 +200,17 @@ export default function HandTracker() {
       style={StyleSheet.absoluteFill}
       device={device}
       isActive={true}
+      pixelFormat="rgb"
       frameProcessor={frameProcessor}
     />
   );
 }
 ```
+
+> ⚠️ **`pixelFormat="rgb"` é obrigatório.** O plugin envolve o frame diretamente
+> via `MediaImageBuilder`, que exige RGBA_8888. Sem essa prop, o Vision Camera
+> entrega frames em YUV e a detecção falha com o erro
+> `Android media image must use RGBA_8888 config`.
 
 ## 📖 API Reference
 
