@@ -247,14 +247,15 @@ ${poseInit}${faceInit}        } catch (e: Exception) {
             // e a mão não é detectada. Usamos frame.orientation (API pública do
             // frame processor) e o convertemos no giro necessário para deixar a
             // imagem em pé, repassado via ImageProcessingOptions.
-            // Obs.: getOrientation() = fromRotationDegrees(rotDeg).reversed(), e
-            // reversed() só troca LEFT<->RIGHT. Invertendo de volta para recuperar
-            // o rotationDegrees do CameraX: LANDSCAPE_LEFT->270 e LANDSCAPE_RIGHT->90.
+            // Mapeia frame.orientation -> giro (graus) que deixa a imagem em pé.
+            // Em modo retrato a câmera frontal reporta orientation=landscape-left;
+            // o giro efetivo para o MediaPipe é 90 (a frontal é espelhada, o que
+            // inverte o sentido do giro em relação à traseira).
             val rotationDegrees = when (frame.orientation) {
                 Orientation.PORTRAIT -> 0
-                Orientation.LANDSCAPE_RIGHT -> 90
+                Orientation.LANDSCAPE_LEFT -> 90
                 Orientation.PORTRAIT_UPSIDE_DOWN -> 180
-                Orientation.LANDSCAPE_LEFT -> 270
+                Orientation.LANDSCAPE_RIGHT -> 270
             }
             val imageProcessingOptions = ImageProcessingOptions.builder()
                 .setRotationDegrees(rotationDegrees)
