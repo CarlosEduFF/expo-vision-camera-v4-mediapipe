@@ -129,12 +129,21 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
                 if (poseResult.landmarks().isNotEmpty()) {
                     val posePoints = mutableListOf<Map<String, Double>>()
                     for (lm in poseResult.landmarks()[0]) {
-                        posePoints.add(hashMapOf(
+                        val point = hashMapOf(
                             "x" to lm.x().toDouble(),
                             "y" to lm.y().toDouble(),
-                            "z" to lm.z().toDouble(),
-                            "visibility" to (lm.visibility().orElse(0f)).toDouble()
-                        ))
+                            "z" to lm.z().toDouble()
+                        )
+                        // visibility()/presence() são Optional e vêm VAZIOS em
+                        // várias builds do Tasks (o campo é populado só quando o
+                        // grafo expõe o score). Um .orElse(0f) aqui marcaria todo
+                        // ponto como invisível e o consumidor, filtrando por isso,
+                        // esconderia a pose inteira. Então só emitimos a chave
+                        // quando o valor existe de fato: ausência de "visibility"
+                        // significa "desconhecido", não "invisível".
+                        val vis = lm.visibility().orElse(null) ?: lm.presence().orElse(null)
+                        if (vis != null) point["visibility"] = vis.toDouble()
+                        posePoints.add(point)
                     }
                     output["pose"] = posePoints
                 }

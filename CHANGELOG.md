@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-08-15
+
+### Fixed
+- **Pose sempre marcada como invisível** — `NormalizedLandmark.visibility()` é um `Optional<Float>` que o PoseLandmarker do Tasks deixa **vazio** em várias builds (o score só é populado quando o grafo o expõe). O código fazia `visibility().orElse(0f)`, então todos os 33 pontos chegavam ao cliente com `visibility = 0`. Consumidores que filtram por esse campo — o padrão sugerido pela própria documentação do MediaPipe — descartavam a pose inteira, ou pior: recebiam zeros num vetor de features e treinavam modelos com o canal de corpo constante. Agora o plugin tenta `visibility()`, cai para `presence()` e, se ambos vierem vazios, **omite a chave** em vez de emitir zero — ausência passa a significar "desconhecido", não "invisível".
+
+### Nota para consumidores
+- Trate `visibility` ausente como ponto presente (`?? 1`), não como zero. Para descartar poses ruins, prefira uma checagem geométrica (largura de ombros plausível, cabeça acima da linha dos ombros): o BlazePose devolve os 33 pontos mesmo sem um corpo reconhecível no enquadramento, e nesse caso nenhum score confiável acompanha o resultado.
+
+## [1.3.0] - 2026-08-14
+
+### Fixed
+- **Modelos recebiam a imagem deitada** — o `ImageProcessingOptions.setRotationDegrees()` é ignorado pelo MediaPipe Tasks quando a `MPImage` vem de um `android.media.Image` via `MediaImageBuilder` (bug conhecido, mesma raiz do ML Kit — googlesamples/mlkit#937), então a correção da 1.2.1/1.2.2 nunca teve efeito: hands/pose/face processavam o buffer cru do sensor (de lado). O `FaceLandmarker` tolerava, mas o `PoseLandmarker` (BlazePose) **não é invariante à rotação** (esqueleto do busto saía errado) e o `HandLandmarker` degradava (a 2ª mão raramente era detectada). Agora o frame RGBA é convertido em `Bitmap`, **girado fisicamente** conforme `frame.orientation` e alimentado via `BitmapImageBuilder` — os três modelos passam a ver a imagem em pé.
+
+### Changed
+- **Modo `VIDEO` com `detectForVideo(...)`** em hands/pose/face (antes `IMAGE`/`detect`): habilita o tracking entre frames — após a primeira detecção, os frames seguintes pulam a fase cara de re-detecção, melhorando estabilidade (inclusive das duas mãos simultâneas) e desempenho. O timestamp vem de `frame.timestamp`.
+- Falha de pose/face não derruba mais o canal de mãos: cada canal opcional tem seu próprio try/catch e reporta `poseError`/`faceError` no resultado.
+
+### Added
+- Resultado agora inclui `imageWidth`/`imageHeight` — dimensões (px) da imagem em pé usada na inferência. Overlays precisam delas para mapear as coordenadas normalizadas num preview com `resizeMode="cover"` (que corta as bordas) sem desalinhamento.
+
 ## [1.2.2] - 2026-06-13
 
 ### Fixed
