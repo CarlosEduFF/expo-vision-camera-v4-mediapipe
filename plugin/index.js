@@ -1,6 +1,6 @@
 /**
  * Expo Config Plugin — MediaPipe Hand Landmarker Integration
- * 
+ *
  * Automatically injects during `expo prebuild`:
  * 1. MediaPipe Tasks Vision dependency in build.gradle
  * 2. Kotlin plugin files in the app package
@@ -90,7 +90,7 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
                 .build()
             val poseOptions = PoseLandmarker.PoseLandmarkerOptions.builder()
                 .setBaseOptions(poseBase)
-                .setRunningMode(RunningMode.IMAGE)
+                .setRunningMode(RunningMode.VIDEO)
                 .setNumPoses(1)
                 .setMinPoseDetectionConfidence(${minDetectionConfidence}f)
                 .setMinPosePresenceConfidence(${minPresenceConfidence}f)
@@ -108,7 +108,7 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
                 .build()
             val faceOptions = FaceLandmarker.FaceLandmarkerOptions.builder()
                 .setBaseOptions(faceBase)
-                .setRunningMode(RunningMode.IMAGE)
+                .setRunningMode(RunningMode.VIDEO)
                 .setNumFaces(1)
                 .setMinFaceDetectionConfidence(${minDetectionConfidence}f)
                 .setMinFacePresenceConfidence(${minPresenceConfidence}f)
@@ -119,11 +119,13 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
 `
     : "";
 
-  // No callback, anexa pose/face ao mapa de saída (mesma MPImage, reaproveitada).
+  // Cada canal opcional tem seu try/catch: uma falha de pose/face não pode
+  // derrubar o canal principal (mãos).
   const poseDetect = enablePose
     ? `
             poseLandmarker?.let { pl ->
-                val poseResult = pl.detect(mpImage, imageProcessingOptions)
+              try {
+                val poseResult = pl.detectForVideo(mpImage, timestampMs)
                 if (poseResult.landmarks().isNotEmpty()) {
                     val posePoints = mutableListOf<Map<String, Double>>()
                     for (lm in poseResult.landmarks()[0]) {
@@ -136,6 +138,10 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
                     }
                     output["pose"] = posePoints
                 }
+              } catch (e: Exception) {
+                Log.e(TAG, "POSE detect falhou (ts=\$timestampMs)", e)
+                output["poseError"] = (e.message ?: e.toString())
+              }
             }
 `
     : "";
@@ -143,7 +149,8 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
   const faceDetect = enableFace
     ? `
             faceLandmarker?.let { fl ->
-                val faceResult = fl.detect(mpImage, imageProcessingOptions)
+              try {
+                val faceResult = fl.detectForVideo(mpImage, timestampMs)
                 if (faceResult.faceLandmarks().isNotEmpty()) {
                     val facePoints = mutableListOf<Map<String, Double>>()
                     for (lm in faceResult.faceLandmarks()[0]) {
@@ -155,18 +162,23 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
                     }
                     output["face"] = facePoints
                 }
+              } catch (e: Exception) {
+                Log.e(TAG, "FACE detect falhou (ts=\$timestampMs)", e)
+                output["faceError"] = (e.message ?: e.toString())
+              }
             }
 `
     : "";
 
   return `package ${packageName}
 
+import android.graphics.Bitmap
+import android.graphics.Matrix
 import android.media.Image
 import android.util.Log
-import com.google.mediapipe.framework.image.MediaImageBuilder
+import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.core.BaseOptions
-import com.google.mediapipe.tasks.vision.core.ImageProcessingOptions
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 ${poseImports}${faceImports}import com.mrousavy.camera.core.types.Orientation
@@ -213,7 +225,7 @@ ${poseField}${faceField}    private var initError: String? = null
 
             val landmarkerOptions = HandLandmarker.HandLandmarkerOptions.builder()
                 .setBaseOptions(baseOptions)
-                .setRunningMode(RunningMode.IMAGE)
+                .setRunningMode(RunningMode.VIDEO)
                 .setNumHands(${numHands})
                 .setMinHandDetectionConfidence(${minDetectionConfidence}f)
                 .setMinHandPresenceConfidence(${minPresenceConfidence}f)
@@ -228,6 +240,54 @@ ${poseInit}${faceInit}        } catch (e: Exception) {
         }
     }
 
+    /**
+     * Converte o frame RGBA da câmera num Bitmap EM PÉ antes da inferência.
+     *
+     * A câmera entrega o buffer na orientação crua do sensor (deitado) e o
+     * ImageProcessingOptions.setRotationDegrees() do MediaPipe Tasks é
+     * ignorado quando a MPImage vem de um android.media.Image via
+     * MediaImageBuilder (bug conhecido, mesma raiz do ML Kit —
+     * https://github.com/googlesamples/mlkit/issues/937).
+     *
+     * Girar só as COORDENADAS de saída não resolve: os modelos continuam
+     * vendo a imagem deitada. O FaceLandmarker até tolera, mas o
+     * HandLandmarker degrada (a 2ª mão some) e o PoseLandmarker (BlazePose)
+     * NÃO é invariante à rotação — o esqueleto do busto sai errado. A
+     * correção real é girar os PIXELS e alimentar via BitmapImageBuilder,
+     * caminho em que a orientação já vai correta na própria imagem.
+     */
+    private fun frameToUprightBitmap(frame: Frame): Bitmap {
+        val image: Image = frame.image
+        val plane = image.planes[0]
+        val buffer = plane.buffer
+        buffer.rewind()
+
+        // rowStride pode ter padding além de width*pixelStride; o bitmap cru é
+        // criado na largura "acolchoada" e o recorte acontece junto do giro.
+        val pixelStride = plane.pixelStride
+        val rowPadding = plane.rowStride - pixelStride * image.width
+        val paddedWidth = image.width + rowPadding / pixelStride
+        val raw = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
+        raw.copyPixelsFromBuffer(buffer)
+
+        // Giro horário que deixa a imagem em pé. LANDSCAPE_LEFT -> 270 foi
+        // validado empiricamente na câmera frontal em retrato (equivale ao
+        // antigo remap de coordenadas (x,y) -> (y, 1-x), que é um giro de 90°
+        // anti-horário); os demais casos seguem por simetria.
+        val degrees = when (frame.orientation) {
+            Orientation.PORTRAIT -> 0f
+            Orientation.LANDSCAPE_LEFT -> 270f
+            Orientation.PORTRAIT_UPSIDE_DOWN -> 180f
+            Orientation.LANDSCAPE_RIGHT -> 90f
+        }
+        if (degrees == 0f && rowPadding == 0) return raw
+
+        val matrix = Matrix().apply { postRotate(degrees) }
+        val upright = Bitmap.createBitmap(raw, 0, 0, image.width, image.height, matrix, true)
+        if (upright !== raw) raw.recycle()
+        return upright
+    }
+
     override fun callback(frame: Frame, params: Map<String, Any>?): Any? {
         if (handLandmarker == null) {
             Log.e(TAG, "HandLandmarker is null! Error: \$initError")
@@ -239,31 +299,24 @@ ${poseInit}${faceInit}        } catch (e: Exception) {
 
         var mpImage: MPImage? = null
         try {
-            val mediaImage: Image = frame.image
-            mpImage = MediaImageBuilder(mediaImage).build()
+            val upright = frameToUprightBitmap(frame)
+            mpImage = BitmapImageBuilder(upright).build()
 
-            // A câmera Android entrega o buffer na orientação do sensor (geralmente
-            // deitado). Sem informar a rotação ao MediaPipe, a imagem chega "de lado"
-            // e a mão não é detectada. Usamos frame.orientation (API pública do
-            // frame processor) e o convertemos no giro necessário para deixar a
-            // imagem em pé, repassado via ImageProcessingOptions.
-            // Mapeia frame.orientation -> giro (graus) que deixa a imagem em pé.
-            // Em modo retrato a câmera frontal reporta orientation=landscape-left;
-            // o giro efetivo para o MediaPipe é 90 (a frontal é espelhada, o que
-            // inverte o sentido do giro em relação à traseira).
-            val rotationDegrees = when (frame.orientation) {
-                Orientation.PORTRAIT -> 0
-                Orientation.LANDSCAPE_LEFT -> 90
-                Orientation.PORTRAIT_UPSIDE_DOWN -> 180
-                Orientation.LANDSCAPE_RIGHT -> 270
-            }
-            val imageProcessingOptions = ImageProcessingOptions.builder()
-                .setRotationDegrees(rotationDegrees)
-                .build()
+            // Modo VIDEO: detectForVideo usa tracking entre frames — após a
+            // primeira detecção, os frames seguintes pulam a fase cara de
+            // re-detecção enquanto o alvo continua rastreado. O timestamp
+            // (crescente, em ms) vem do próprio frame da câmera.
+            val timestampMs = frame.timestamp / 1_000_000
 
-            val result = handLandmarker!!.detect(mpImage, imageProcessingOptions)
+            val result = handLandmarker!!.detectForVideo(mpImage, timestampMs)
 
             val output = hashMapOf<String, Any>()
+
+            // Dimensões da imagem (em pé) usada na inferência — o overlay do
+            // app precisa delas para mapear as coordenadas normalizadas no
+            // preview com resizeMode "cover" (que corta as bordas).
+            output["imageWidth"] = upright.width
+            output["imageHeight"] = upright.height
 
             // Extract hand landmark points
             val handsArray = mutableListOf<List<Map<String, Double>>>()
@@ -510,3 +563,7 @@ function withHandLandmarker(config, options = {}) {
 }
 
 module.exports = withHandLandmarker;
+// Exposto para testes/geração manual do Kotlin (ex.: sincronizar um android/
+// já prebuildado sem rodar `expo prebuild` de novo).
+module.exports.getHandLandmarkerPluginKotlin = getHandLandmarkerPluginKotlin;
+module.exports.resolveOptions = resolveOptions;

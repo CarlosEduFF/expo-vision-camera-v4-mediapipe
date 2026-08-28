@@ -119,6 +119,17 @@ export interface HandDetectionResult {
    * Present only when an error occurred during initialization or inference.
    */
   error?: string;
+
+  /**
+   * Width, in pixels, of the upright image the landmarks were detected on
+   * (after the plugin rotates the raw sensor buffer). All normalized
+   * coordinates are relative to this image — overlays need it to compensate
+   * the preview's "cover" crop.
+   */
+  imageWidth?: number;
+
+  /** Height, in pixels, of the upright image the landmarks were detected on. */
+  imageHeight?: number;
 }
 
 /**
