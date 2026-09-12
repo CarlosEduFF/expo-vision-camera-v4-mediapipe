@@ -51,8 +51,15 @@ export interface PoseLandmark {
   x: number;
   y: number;
   z: number;
-  /** Probability of the landmark being visible in the frame [0.0, 1.0] */
-  visibility: number;
+  /**
+   * Probability of the landmark being visible in the frame [0.0, 1.0].
+   *
+   * Optional: MediaPipe Tasks leaves `visibility()`/`presence()` empty on
+   * several builds, and the plugin omits the key entirely rather than
+   * emitting a misleading zero. Treat a missing value as "unknown, assume
+   * present" (`?? 1`) — never as invisible.
+   */
+  visibility?: number;
 }
 
 /**
@@ -130,6 +137,27 @@ export interface HandDetectionResult {
 
   /** Height, in pixels, of the upright image the landmarks were detected on. */
   imageHeight?: number;
+
+  /**
+   * Error raised by the pose channel on this frame, if any.
+   * Pose and face each have their own try/catch so a failure in either does
+   * not take down hand detection — the error surfaces here instead.
+   */
+  poseError?: string;
+
+  /** Error raised by the face channel on this frame, if any. */
+  faceError?: string;
+
+  /**
+   * Which MediaPipe delegate each landmarker ended up using, keyed by name
+   * (`"HandLandmarker"`, `"PoseLandmarker"`, `"FaceLandmarker"`) with value
+   * `"GPU"`, `"CPU"` or `"FAILED"`.
+   *
+   * The plugin tries the GPU delegate first and silently falls back to CPU
+   * when the device cannot support it, which changes inference time by
+   * several times — this field is the only way to tell which path is live.
+   */
+  delegates?: Record<string, string>;
 }
 
 /**

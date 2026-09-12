@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-08-28
+
+### Fixed
+- **Landmarks chegavam segundos atrás do movimento real** — o VisionCamera configura o `ImageAnalysis` do CameraX com `STRATEGY_BLOCK_PRODUCER`, que **enfileira** os frames e entrega todos em ordem. Como qualquer inferência de ML é mais lenta que a câmera (~40-100ms por frame contra 33ms de produção), essa fila crescia sem parar e o frame processor passava a receber imagens cada vez mais antigas — na prática, ~2 segundos de atraso. O preview é um use case separado do CameraX e continuava fluido, o que tornava o sintoma confuso: a câmera respondia na hora, mas os pontos desenhados ficavam para trás. O config plugin agora troca a estratégia para `STRATEGY_KEEP_ONLY_LATEST` durante o prebuild: frames intermediários são descartados na origem e a inferência recebe sempre o mais recente. Nenhuma otimização a jusante (GPU, resolução, menos pontos) resolve isso — a fila é anterior a tudo.
+
+### Added
+- **Canais pose/face desligáveis em runtime, por frame** — `detectHandLandmarks(frame, { pose: false, face: false })`. Antes, `enablePose`/`enableFace` do `app.json` eram resolvidos em tempo de build e os três modelos rodavam em TODO frame; um app que quisesse um modo "só mãos" pagava a inferência completa e apenas descartava o resultado no JS. Agora o Kotlin lê os flags de `params` e pula a inferência dos canais desligados, devolvendo o tempo desses modelos ao frame — em aparelhos de entrada é a diferença entre o app ser usável ou não. Omitir o argumento mantém ambos ligados (retrocompatível); os canais continuam existindo só quando habilitados no `app.json`.
+- **Delegate GPU com fallback automático para CPU** nos três landmarkers. Os modelos rodavam em CPU (o default do MediaPipe Tasks quando `setDelegate` não é chamado), o que num Dimensity 7200-Ultra dava **138ms de mediana por frame — teto de ~7fps** com os três canais ligados. O delegate GPU não é suportado em todo chipset e a falha só aparece na criação do landmarker, então cada canal tenta GPU e cai para CPU silenciosamente se preciso — um aparelho incompatível continua funcionando, em vez de ficar sem nenhum landmarker.
+- **Campo `delegates` no resultado** (`{"HandLandmarker": "GPU", ...}`, valores `GPU`/`CPU`/`FAILED`). Como o fallback é silencioso e muda o tempo de inferência em várias vezes, este campo é a única forma de saber qual caminho está ativo no aparelho.
+- Tipos: `poseError`, `faceError` e `delegates` declarados em `HandDetectionResult` — os dois primeiros já eram emitidos nativamente desde a 1.3.0, mas obrigavam o consumidor a usar `as any`.
+
+### Changed
+- **Bitmap de entrada reusado entre frames.** `frameToUprightBitmap` alocava um `ARGB_8888` novo a cada frame (~1,2 MB a 640x480, descartados 30x/s). O churn de GC resultante aparecia como picos de latência — mediana de 138ms contra máximos de 323ms. O bitmap agora é realocado só quando as dimensões do frame mudam.
+- **Cadência escalonada de pose e face.** Corpo e rosto mudam devagar comparados às mãos: pose passa a rodar a cada 2 frames e face a cada 3, reusando o último resultado nos intermediários. O payload entregue ao consumidor mantém a mesma forma e todos os canais — só com dados até 1-2 frames mais velhos.
+
+### Fixed
+- `PoseLandmark.visibility` passa a ser opcional nos tipos (`visibility?: number`), refletindo o runtime: desde a 1.3.1 o plugin **omite** a chave quando o score é desconhecido, mas o tipo ainda a declarava obrigatória.
+
 ## [1.3.1] - 2026-08-15
 
 ### Fixed

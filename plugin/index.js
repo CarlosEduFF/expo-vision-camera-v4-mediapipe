@@ -85,37 +85,41 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
 
   const poseInit = enablePose
     ? `
-            val poseBase = BaseOptions.builder()
-                .setModelAssetPath("${MODEL_POSE}")
-                .build()
-            val poseOptions = PoseLandmarker.PoseLandmarkerOptions.builder()
-                .setBaseOptions(poseBase)
-                .setRunningMode(RunningMode.VIDEO)
-                .setNumPoses(1)
-                .setMinPoseDetectionConfidence(${minDetectionConfidence}f)
-                .setMinPosePresenceConfidence(${minPresenceConfidence}f)
-                .setMinTrackingConfidence(${minTrackingConfidence}f)
-                .build()
-            poseLandmarker = PoseLandmarker.createFromOptions(context, poseOptions)
-            Log.d(TAG, "=== PoseLandmarker CREATED ===")
+            poseLandmarker = createWithDelegateFallback("PoseLandmarker") { delegate ->
+                val poseBase = BaseOptions.builder()
+                    .setModelAssetPath("${MODEL_POSE}")
+                    .setDelegate(delegate)
+                    .build()
+                val poseOptions = PoseLandmarker.PoseLandmarkerOptions.builder()
+                    .setBaseOptions(poseBase)
+                    .setRunningMode(RunningMode.VIDEO)
+                    .setNumPoses(1)
+                    .setMinPoseDetectionConfidence(${minDetectionConfidence}f)
+                    .setMinPosePresenceConfidence(${minPresenceConfidence}f)
+                    .setMinTrackingConfidence(${minTrackingConfidence}f)
+                    .build()
+                PoseLandmarker.createFromOptions(context, poseOptions)
+            }
 `
     : "";
 
   const faceInit = enableFace
     ? `
-            val faceBase = BaseOptions.builder()
-                .setModelAssetPath("${MODEL_FACE}")
-                .build()
-            val faceOptions = FaceLandmarker.FaceLandmarkerOptions.builder()
-                .setBaseOptions(faceBase)
-                .setRunningMode(RunningMode.VIDEO)
-                .setNumFaces(1)
-                .setMinFaceDetectionConfidence(${minDetectionConfidence}f)
-                .setMinFacePresenceConfidence(${minPresenceConfidence}f)
-                .setMinTrackingConfidence(${minTrackingConfidence}f)
-                .build()
-            faceLandmarker = FaceLandmarker.createFromOptions(context, faceOptions)
-            Log.d(TAG, "=== FaceLandmarker CREATED ===")
+            faceLandmarker = createWithDelegateFallback("FaceLandmarker") { delegate ->
+                val faceBase = BaseOptions.builder()
+                    .setModelAssetPath("${MODEL_FACE}")
+                    .setDelegate(delegate)
+                    .build()
+                val faceOptions = FaceLandmarker.FaceLandmarkerOptions.builder()
+                    .setBaseOptions(faceBase)
+                    .setRunningMode(RunningMode.VIDEO)
+                    .setNumFaces(1)
+                    .setMinFaceDetectionConfidence(${minDetectionConfidence}f)
+                    .setMinFacePresenceConfidence(${minPresenceConfidence}f)
+                    .setMinTrackingConfidence(${minTrackingConfidence}f)
+                    .build()
+                FaceLandmarker.createFromOptions(context, faceOptions)
+            }
 `
     : "";
 
@@ -123,8 +127,19 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
   // derrubar o canal principal (mãos).
   const poseDetect = enablePose
     ? `
+            if (!runPose) {
+                // Canal desligado em runtime: nem roda a inferência. Diferente
+                // de descartar o resultado no JS, isto economiza o tempo do
+                // modelo — o que decide a viabilidade em aparelhos fracos.
+                lastPosePoints = null
+            } else
             poseLandmarker?.let { pl ->
               try {
+                // Cadência: roda a inferência de pose a cada 2 frames e reusa o
+                // último resultado no frame intermediário.
+                if (frameCounter % 2L != 0L) {
+                    lastPosePoints?.let { output["pose"] = it }
+                } else {
                 val poseResult = pl.detectForVideo(mpImage, timestampMs)
                 if (poseResult.landmarks().isNotEmpty()) {
                     val posePoints = mutableListOf<Map<String, Double>>()
@@ -146,6 +161,12 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
                         posePoints.add(point)
                     }
                     output["pose"] = posePoints
+                    lastPosePoints = posePoints
+                } else {
+                    // Sem pose neste frame: descarta o cache para não publicar
+                    // um corpo que já saiu do enquadramento.
+                    lastPosePoints = null
+                }
                 }
               } catch (e: Exception) {
                 Log.e(TAG, "POSE detect falhou (ts=\$timestampMs)", e)
@@ -157,8 +178,16 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
 
   const faceDetect = enableFace
     ? `
+            if (!runFace) {
+                lastFacePoints = null
+            } else
             faceLandmarker?.let { fl ->
               try {
+                // O rosto é o canal mais caro por ponto (478 landmarks) e o que
+                // menos muda entre frames: roda a cada 3.
+                if (frameCounter % 3L != 0L) {
+                    lastFacePoints?.let { output["face"] = it }
+                } else {
                 val faceResult = fl.detectForVideo(mpImage, timestampMs)
                 if (faceResult.faceLandmarks().isNotEmpty()) {
                     val facePoints = mutableListOf<Map<String, Double>>()
@@ -170,6 +199,10 @@ function getHandLandmarkerPluginKotlin(packageName, options) {
                         ))
                     }
                     output["face"] = facePoints
+                    lastFacePoints = facePoints
+                } else {
+                    lastFacePoints = null
+                }
                 }
               } catch (e: Exception) {
                 Log.e(TAG, "FACE detect falhou (ts=\$timestampMs)", e)
@@ -188,6 +221,7 @@ import android.util.Log
 import com.google.mediapipe.framework.image.BitmapImageBuilder
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.core.BaseOptions
+import com.google.mediapipe.tasks.core.Delegate
 import com.google.mediapipe.tasks.vision.core.RunningMode
 import com.google.mediapipe.tasks.vision.handlandmarker.HandLandmarker
 ${poseImports}${faceImports}import com.mrousavy.camera.core.types.Orientation
@@ -223,26 +257,85 @@ class HandLandmarkerPlugin(
     private var handLandmarker: HandLandmarker? = null
 ${poseField}${faceField}    private var initError: String? = null
 
+    /**
+     * Qual delegate acabou sendo usado ("GPU" ou "CPU"), por canal.
+     *
+     * Exposto no resultado de cada frame porque o fallback é silencioso: sem
+     * isso não há como saber, olhando o app rodando, se a GPU realmente entrou
+     * em uso ou se todos os canais caíram para CPU num aparelho incompatível —
+     * a diferença é de várias vezes no tempo de inferência.
+     */
+    private val delegatesUsed = mutableMapOf<String, String>()
+
+    /** Bitmap de entrada reusado entre frames — ver frameToUprightBitmap(). */
+    private var reusableRaw: Bitmap? = null
+
+    /**
+     * Contador de frames, base da cadência escalonada de pose/face.
+     *
+     * Pose (ombros/cotovelos/pulsos) e rosto mudam devagar comparados às mãos,
+     * então rodá-los em TODO frame gasta tempo de inferência sem ganho
+     * perceptível. Rodando pose a cada 2 e face a cada 3 frames, e reusando o
+     * último resultado nos intermediários, o custo médio por frame cai sem que
+     * o payload enviado ao servidor mude de forma — os canais seguem completos,
+     * só com dados até 1-2 frames mais velhos.
+     */
+    private var frameCounter = 0L
+    private var lastPosePoints: List<Map<String, Double>>? = null
+    private var lastFacePoints: List<Map<String, Double>>? = null
+
+    /**
+     * Cria um landmarker tentando GPU e caindo para CPU se falhar.
+     *
+     * O delegate GPU do MediaPipe não é suportado em todo chipset e a falha
+     * aparece só na criação do landmarker (driver ausente, OpenCL bloqueado,
+     * modelo com operador não delegável). Sem o fallback, um aparelho
+     * incompatível ficaria sem NENHUM landmarker — pior que rodar em CPU.
+     */
+    private fun <T> createWithDelegateFallback(name: String, create: (Delegate) -> T): T? {
+        try {
+            val instance = create(Delegate.GPU)
+            delegatesUsed[name] = "GPU"
+            Log.d(TAG, "=== \$name CREATED (GPU) ===")
+            return instance
+        } catch (e: Throwable) {
+            Log.w(TAG, "\$name: GPU indisponível, caindo para CPU — \${e.message}")
+        }
+        return try {
+            val instance = create(Delegate.CPU)
+            delegatesUsed[name] = "CPU"
+            Log.d(TAG, "=== \$name CREATED (CPU) ===")
+            instance
+        } catch (e: Exception) {
+            delegatesUsed[name] = "FAILED"
+            Log.e(TAG, "=== \$name FALHOU em GPU e CPU ===", e)
+            null
+        }
+    }
+
     init {
         try {
             Log.d(TAG, "=== INITIALIZING HandLandmarkerPlugin ===")
             val context = proxy.context
 
-            val baseOptions = BaseOptions.builder()
-                .setModelAssetPath("${MODEL_HAND}")
-                .build()
+            handLandmarker = createWithDelegateFallback("HandLandmarker") { delegate ->
+                val baseOptions = BaseOptions.builder()
+                    .setModelAssetPath("${MODEL_HAND}")
+                    .setDelegate(delegate)
+                    .build()
 
-            val landmarkerOptions = HandLandmarker.HandLandmarkerOptions.builder()
-                .setBaseOptions(baseOptions)
-                .setRunningMode(RunningMode.VIDEO)
-                .setNumHands(${numHands})
-                .setMinHandDetectionConfidence(${minDetectionConfidence}f)
-                .setMinHandPresenceConfidence(${minPresenceConfidence}f)
-                .setMinTrackingConfidence(${minTrackingConfidence}f)
-                .build()
+                val landmarkerOptions = HandLandmarker.HandLandmarkerOptions.builder()
+                    .setBaseOptions(baseOptions)
+                    .setRunningMode(RunningMode.VIDEO)
+                    .setNumHands(${numHands})
+                    .setMinHandDetectionConfidence(${minDetectionConfidence}f)
+                    .setMinHandPresenceConfidence(${minPresenceConfidence}f)
+                    .setMinTrackingConfidence(${minTrackingConfidence}f)
+                    .build()
 
-            handLandmarker = HandLandmarker.createFromOptions(context, landmarkerOptions)
-            Log.d(TAG, "=== HandLandmarker CREATED SUCCESSFULLY ===")
+                HandLandmarker.createFromOptions(context, landmarkerOptions)
+            }
+            if (handLandmarker == null) initError = "HandLandmarker falhou em GPU e CPU"
 ${poseInit}${faceInit}        } catch (e: Exception) {
             initError = e.message
             Log.e(TAG, "=== ERROR INITIALIZING landmarkers ===", e)
@@ -276,7 +369,18 @@ ${poseInit}${faceInit}        } catch (e: Exception) {
         val pixelStride = plane.pixelStride
         val rowPadding = plane.rowStride - pixelStride * image.width
         val paddedWidth = image.width + rowPadding / pixelStride
-        val raw = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
+
+        // O bitmap de entrada é REUSADO entre frames: alocar um ARGB_8888 de
+        // 640x480 a cada frame são ~1,2 MB descartados 30x por segundo, e o
+        // churn de GC resultante aparecia como picos de latência (p50 138ms
+        // contra máximos de 320ms+). As dimensões só mudam se o formato da
+        // câmera mudar, então na prática aloca-se uma vez.
+        var raw = reusableRaw
+        if (raw == null || raw.width != paddedWidth || raw.height != image.height) {
+            raw?.recycle()
+            raw = Bitmap.createBitmap(paddedWidth, image.height, Bitmap.Config.ARGB_8888)
+            reusableRaw = raw
+        }
         raw.copyPixelsFromBuffer(buffer)
 
         // Giro horário que deixa a imagem em pé. LANDSCAPE_LEFT -> 270 foi
@@ -292,9 +396,10 @@ ${poseInit}${faceInit}        } catch (e: Exception) {
         if (degrees == 0f && rowPadding == 0) return raw
 
         val matrix = Matrix().apply { postRotate(degrees) }
-        val upright = Bitmap.createBitmap(raw, 0, 0, image.width, image.height, matrix, true)
-        if (upright !== raw) raw.recycle()
-        return upright
+        // O bitmap cru NÃO é reciclado aqui: ele é o buffer reusado entre
+        // frames e reciclá-lo o invalidaria para a próxima chamada (o
+        // createBitmap acima já copia os pixels para o bitmap girado).
+        return Bitmap.createBitmap(raw, 0, 0, image.width, image.height, matrix, true)
     }
 
     override fun callback(frame: Frame, params: Map<String, Any>?): Any? {
@@ -305,6 +410,17 @@ ${poseInit}${faceInit}        } catch (e: Exception) {
                 "error" to (initError ?: "HandLandmarker not initialized")
             )
         }
+
+        frameCounter++
+
+        // Canais opcionais podem ser desligados POR FRAME, a partir do JS:
+        //   detectHandLandmarks(frame, { pose: false, face: false })
+        // Diferente de simplesmente ignorar o resultado no JS, isto pula a
+        // inferência e devolve o tempo do modelo ao frame — em aparelhos de
+        // entrada é a diferença entre rodar e não rodar. Ausente = ligado,
+        // preservando o comportamento de quem chama sem argumentos.
+        val runPose = params?.get("pose") as? Boolean ?: true
+        val runFace = params?.get("face") as? Boolean ?: true
 
         var mpImage: MPImage? = null
         try {
@@ -326,6 +442,11 @@ ${poseInit}${faceInit}        } catch (e: Exception) {
             // preview com resizeMode "cover" (que corta as bordas).
             output["imageWidth"] = upright.width
             output["imageHeight"] = upright.height
+
+            // Delegate efetivamente em uso por canal — o fallback GPU→CPU é
+            // silencioso, então sem isto não dá para saber se a aceleração
+            // pegou neste aparelho.
+            output["delegates"] = HashMap(delegatesUsed)
 
             // Extract hand landmark points
             val handsArray = mutableListOf<List<Map<String, Double>>>()
@@ -416,6 +537,50 @@ function contentHash(content) {
     hash |= 0; // Convert to 32bit integer
   }
   return hash.toString(36);
+}
+
+/**
+ * Troca a estratégia de backpressure do frame processor do VisionCamera para
+ * STRATEGY_KEEP_ONLY_LATEST.
+ *
+ * O VisionCamera configura o ImageAnalysis do CameraX com
+ * STRATEGY_BLOCK_PRODUCER, que ENFILEIRA os frames e entrega todos em ordem.
+ * Quando a análise é mais lenta que a câmera — o caso de qualquer inferência
+ * de ML: ~40-100ms por frame contra 33ms de produção — essa fila cresce sem
+ * parar e o frame processor passa a receber imagens cada vez mais antigas.
+ * O preview é um use case separado e continua fluido, então o sintoma é
+ * característico: a câmera responde na hora, mas os landmarks desenhados
+ * ficam segundos atrás do movimento real.
+ *
+ * KEEP_ONLY_LATEST descarta os frames intermediários e entrega sempre o mais
+ * recente. Perde-se frames (que a inferência não daria conta mesmo) e ganha-se
+ * a garantia de que o resultado corresponde ao que está na tela AGORA.
+ *
+ * Aplicado aqui, no prebuild, porque o arquivo vive em node_modules e qualquer
+ * `npm install` reverteria uma edição manual.
+ *
+ * @param {string} projectRoot
+ */
+function patchVisionCameraBackpressure(projectRoot) {
+  const target = path.join(
+    projectRoot, "node_modules", "react-native-vision-camera", "android", "src",
+    "main", "java", "com", "mrousavy", "camera", "core",
+    "CameraSession+Configuration.kt"
+  );
+  if (!fs.existsSync(target)) {
+    console.warn("[HandLandmarker] ⚠️  CameraSession+Configuration.kt não encontrado — backpressure não ajustado");
+    return;
+  }
+  const source = fs.readFileSync(target, "utf-8");
+  const from = "ImageAnalysis.STRATEGY_BLOCK_PRODUCER";
+  const to = "ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST";
+  if (source.includes(to)) return; // já aplicado
+  if (!source.includes(from)) {
+    console.warn("[HandLandmarker] ⚠️  STRATEGY_BLOCK_PRODUCER não encontrado — o VisionCamera pode ter mudado");
+    return;
+  }
+  fs.writeFileSync(target, source.replace(from, to));
+  console.log("[HandLandmarker] ⚡ backpressure do frame processor → KEEP_ONLY_LATEST");
 }
 
 /**
@@ -515,6 +680,8 @@ function withHandLandmarker(config, options = {}) {
 
       fs.mkdirSync(javaDir, { recursive: true });
       fs.mkdirSync(assetsDir, { recursive: true });
+
+      patchVisionCameraBackpressure(projectRoot);
 
       // Generate plugin source (idempotent — only write if changed)
       const kotlinSource = getHandLandmarkerPluginKotlin(packageName, resolvedOptions);
