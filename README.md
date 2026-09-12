@@ -34,7 +34,7 @@ Detect **21 hand landmark points** per hand in real-time, directly on-device (**
 | 📐 **21 Landmarks** | Full 3D hand skeleton (x, y, z) per hand |
 | 🧍 **Body Pose** *(opt-in)* | 33 body landmarks via `PoseLandmarker` — enable with `enablePose` |
 | 😀 **Face** *(opt-in)* | Up to 478 face landmarks via `FaceLandmarker` — enable with `enableFace` |
-| 🤟 **Holistic** | Hands + body + face together — built for full sign-language (Libras) meaning |
+| 🤟 **Holistic** | Hands + body + face together — for sign language and any gesture where expression and posture matter |
 | 📦 **Expo Managed** | Works in managed workflow — no need to eject |
 | 🔧 **Auto-Config** | Automatically configures `build.gradle`, `MainApplication.kt`, and native assets |
 | ⚙️ **Configurable** | Tune detection/tracking confidence and max hands via `app.json` |
@@ -390,7 +390,7 @@ npx expo run:android
 
 ## 📄 Credits
 
-Developed as part of the **[Li-Vision](https://github.com/CarlosEduFF)** project — advanced accessibility and gesture recognition powered by Edge AI.
+Developed by **[CarlosEduFF](https://github.com/CarlosEduFF)** — accessibility and gesture recognition powered by Edge AI.
 
 ## 📝 License
 

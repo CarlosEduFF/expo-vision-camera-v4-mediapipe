@@ -79,8 +79,8 @@ export interface FaceLandmark {
  *
  * `pose` and `face` are present only when the plugin is configured with
  * `enablePose` / `enableFace` and the respective landmarks were detected.
- * For Libras (Brazilian Sign Language), face (non-manual markers) and body
- * pose carry meaning beyond the hands.
+ * In sign language, face (non-manual markers) and body pose carry meaning
+ * beyond the hands.
  */
 export interface HandDetectionResult {
   /**
@@ -240,8 +240,9 @@ export declare enum HandLandmarkIndex {
 }
 
 /**
- * MediaPipe Pose landmark indices (subset relevant for Libras: upper body).
- * Mirrors the POSE_INDICES used by the Li-Vision API feature builder.
+ * MediaPipe Pose landmark indices (upper-body subset).
+ * Useful when only the torso, arms and head carry signal — as in sign
+ * language, where the lower body rarely contributes meaning.
  */
 export declare enum PoseLandmarkIndex {
   NOSE = 0,

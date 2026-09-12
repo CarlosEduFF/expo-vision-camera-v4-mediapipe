@@ -59,7 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.2.0] - 2026-06-07
 
 ### Added
-- **Holistic detection** — optional body pose (`PoseLandmarker`) and face (`FaceLandmarker`) landmarks alongside hands, essential for full sign-language (Libras) meaning where non-manual markers (face) and body posture carry semantics beyond the hands.
+- **Holistic detection** — optional body pose (`PoseLandmarker`) and face (`FaceLandmarker`) landmarks alongside hands, essential for sign language and any gesture vocabulary where non-manual markers (face) and body posture carry semantics beyond the hands.
 - New `app.json` options `enablePose` and `enableFace` (both default `false`).
 - Result now optionally includes `pose` (33 points with `visibility`) and `face` (up to 478 points) fields.
 - TypeScript types `PoseLandmark`, `FaceLandmark`, `HolisticDetectionResult`, and `PoseLandmarkIndex` enum.

@@ -21,7 +21,8 @@
  *
  * Com enablePose/enableFace, o plugin também detecta corpo (PoseLandmarker) e
  * rosto (FaceLandmarker), retornando 'pose' e 'face' além de 'hands' — canais
- * necessários para o significado completo dos sinais de Libras. Esses modelos
+ * necessários quando expressão facial e postura carregam significado, como em
+ * linguagem de sinais. Esses modelos
  * (pose_landmarker_lite.task, face_landmarker.task) precisam estar disponíveis
  * para cópia ao prebuild.
  *
@@ -46,7 +47,7 @@ const DEFAULT_OPTIONS = {
   minDetectionConfidence: 0.4,
   minPresenceConfidence: 0.4,
   minTrackingConfidence: 0.4,
-  // Canais holísticos (Libras completa). Desligados por padrão para manter
+  // Canais holísticos (mãos + corpo + rosto). Desligados por padrão para manter
   // o comportamento só-mãos retrocompatível.
   enablePose: false,
   enableFace: false,
@@ -235,7 +236,7 @@ import com.mrousavy.camera.frameprocessors.VisionCameraProxy
  *
  * Sempre retorna 21 landmarks por mão (x, y, z) + handedness (Left/Right).
  * Opcionalmente retorna 'pose' (corpo) e 'face' (rosto) quando habilitados,
- * essenciais para o significado completo dos sinais de Libras.
+ * essenciais quando expressão facial e postura carregam significado.
  *
  * Configuração:
  *   numHands = ${numHands}

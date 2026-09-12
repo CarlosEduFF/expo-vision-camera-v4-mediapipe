@@ -65,8 +65,9 @@ const HandLandmarkIndex = Object.freeze({
 });
 
 /**
- * MediaPipe Pose landmark indices (subset relevant for Libras: upper body).
- * Mirrors POSE_INDICES used by the Li-Vision API feature builder.
+ * MediaPipe Pose landmark indices (upper-body subset).
+ * Useful when only the torso, arms and head carry signal — as in sign
+ * language, where the lower body rarely contributes meaning.
  * @readonly
  * @enum {number}
  */
